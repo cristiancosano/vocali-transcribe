@@ -1,0 +1,32 @@
+service: vocali-api
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: nodejs24.x
+  region: eu-west-1
+  httpApi:
+    cors:
+      allowedOrigins:
+        - ${env:WEB_ORIGIN, 'http://localhost:3000'}
+      allowedHeaders:
+        - Authorization
+        - Content-Type
+      allowedMethods:
+        - GET
+        - OPTIONS
+
+plugins:
+  - serverless-offline
+
+custom:
+  serverless-offline:
+    httpPort: 3030
+    lambdaPort: 3031
+functions:
+  health:
+    handler: src/handlers/health.handler
+    events:
+      - httpApi:
+          path: /health
+          method: GET

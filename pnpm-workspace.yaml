@@ -1,0 +1,7 @@
+packages:
+  - api
+  - contracts
+  - web
+allowBuilds:
+  esbuild: true
+  serverless: true
