@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    env:
+      NUXT_API_ENDPOINT: http://127.0.0.1:3030
+      NUXT_PUBLIC_API_BASE: /api
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
+      - run: pnpm run test:coverage
+      - run: pnpm web build
+      - uses: cypress-io/github-action@v7
+        with:
+          install: false
+          working-directory: web
+          start: pnpm preview
+          wait-on: http://127.0.0.1:3000/login

@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+.iziToast:after{
+    box-shadow: none!important;
+}

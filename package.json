@@ -5,9 +5,17 @@
   "scripts": {
     "web": "pnpm --dir web",
     "api": "pnpm --dir api",
-    "dev": "concurrently \"pnpm web dev\" \"pnpm api dev\" "
+    "dev": "concurrently \"pnpm web dev\" \"pnpm api dev\" ",
+    "check": "pnpm lint && pnpm api check && pnpm web check",
+    "lint": "eslint contracts/src && pnpm api lint && pnpm web lint",
+    "test": "pnpm api test && pnpm web test",
+    "test:coverage": "pnpm api test:coverage && pnpm web test:coverage"
   },
   "devDependencies": {
-    "concurrently": "^10.0.5"
+    "concurrently": "^10.0.5",
+    "eslint": "^10.9.1",
+    "eslint-plugin-vue": "^10.10.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.68.0"
   }
 }

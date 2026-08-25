@@ -1,32 +1,200 @@
 service: vocali-api
 frameworkVersion: '4'
+useDotenv: true
 
 provider:
   name: aws
   runtime: nodejs24.x
-  region: eu-west-1
+  region: ${env:DEPLOY_REGION, 'eu-north-1'}
+  environment:
+    COGNITO_CLIENT_ID: ${env:COGNITO_CLIENT_ID}
+    COGNITO_CLIENT_SECRET: ${env:COGNITO_CLIENT_SECRET, ''}
+    SESSIONS_TABLE: vocali-api-${sls:stage}-sessions
+    SESSION_TTL_SECONDS: ${env:SESSION_TTL_SECONDS, '2592000'}
+    TRANSCRIPTIONS_TABLE: vocali-api-${sls:stage}-transcriptions
+    WEB_ORIGIN: ${env:WEB_ORIGIN, 'http://localhost:3000'}
+    WEB_ORIGIN_LOCAL: ${env:WEB_ORIGIN_LOCAL, 'http://localhost:3000'}
+    AUDIO_BUCKET: ${self:custom.audioBucketName}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:DeleteItem
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+          Resource: !GetAtt SessionsTable.Arn
+        - Effect: Allow
+          Action: s3:PutObject
+          Resource: !Sub '${AudioBucket.Arn}/*'
+        - Effect: Allow
+          Action: s3:GetObject
+          Resource: !Sub '${AudioBucket.Arn}/*'
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:Query
+          Resource:
+            - !GetAtt TranscriptionsTable.Arn
+            - !Sub '${TranscriptionsTable.Arn}/index/*'
   httpApi:
     cors:
       allowedOrigins:
         - ${env:WEB_ORIGIN, 'http://localhost:3000'}
+        - ${env:WEB_ORIGIN_LOCAL, 'http://localhost:3000'}
+      allowCredentials: true
       allowedHeaders:
-        - Authorization
         - Content-Type
       allowedMethods:
         - GET
+        - POST
         - OPTIONS
 
 plugins:
   - serverless-offline
 
 custom:
+  audioBucketName: ${self:service}-${sls:stage}-${aws:accountId}-audio
   serverless-offline:
     httpPort: 3030
     lambdaPort: 3031
 functions:
-  health:
-    handler: src/handlers/health.handler
+  login:
+    handler: src/auth/login.handler
     events:
-      - httpApi:
-          path: /health
-          method: GET
+      - httpApi: { path: /auth/login, method: POST }
+  logout:
+    handler: src/auth/logout.handler
+    events:
+      - httpApi: { path: /auth/logout, method: POST }
+  session:
+    handler: src/auth/session.handler
+    events:
+      - httpApi: { path: /auth/session, method: GET }
+  register:
+    handler: src/auth/register.handler
+    events:
+      - httpApi: { path: /auth/register, method: POST }
+  confirmRegistration:
+    handler: src/auth/confirm-registration.handler
+    events:
+      - httpApi: { path: /auth/register/confirm, method: POST }
+  createAudioUpload:
+    handler: src/transcriptions/create-audio-upload.handler
+    events:
+      - httpApi: { path: /transcriptions/upload, method: POST }
+  startTranscription:
+    handler: src/transcriptions/start-transcription.handler
+    environment:
+      SPEECHMATICS_API_KEY: ${env:SPEECHMATICS_API_KEY}
+      SPEECHMATICS_API_URL: ${env:SPEECHMATICS_API_URL, 'https://eu1.asr.api.speechmatics.com'}
+      SPEECHMATICS_LANGUAGE: ${env:SPEECHMATICS_LANGUAGE, 'es'}
+    events:
+      - httpApi: { path: '/transcriptions/{id}/start', method: POST }
+  getTranscription:
+    handler: src/transcriptions/get-transcription.handler
+    events:
+      - httpApi: { path: '/transcriptions/{id}', method: GET }
+  pollTranscription:
+    handler: src/transcriptions/poll-transcription.handler
+    environment:
+      SPEECHMATICS_API_KEY: ${env:SPEECHMATICS_API_KEY}
+      SPEECHMATICS_API_URL: ${env:SPEECHMATICS_API_URL, 'https://eu1.asr.api.speechmatics.com'}
+      SPEECHMATICS_LANGUAGE: ${env:SPEECHMATICS_LANGUAGE, 'es'}
+    events:
+      - httpApi: { path: '/transcriptions/{id}/status', method: POST }
+  listTranscriptions:
+    handler: src/transcriptions/list-transcriptions.handler
+    events:
+      - httpApi: { path: /transcriptions, method: GET }
+  realtimeToken:
+    handler: src/transcriptions/create-realtime-transcription-token.handler
+    environment:
+      SPEECHMATICS_API_KEY: ${env:SPEECHMATICS_API_KEY}
+      SPEECHMATICS_LANGUAGE: ${env:SPEECHMATICS_LANGUAGE, 'es'}
+      SPEECHMATICS_REALTIME_URL: ${env:SPEECHMATICS_REALTIME_URL, 'wss://eu.rt.speechmatics.com/v2'}
+    events:
+      - httpApi: { path: /transcriptions/realtime-token, method: POST }
+  completeRealtimeTranscription:
+    handler: src/transcriptions/complete-realtime-transcription.handler
+    events:
+      - httpApi: { path: '/transcriptions/{id}/realtime', method: POST }
+  downloadAudio:
+    handler: src/transcriptions/download-transcription-audio.handler
+    events:
+      - httpApi: { path: '/transcriptions/{id}/audio', method: GET }
+  downloadTranscript:
+    handler: src/transcriptions/download-transcription-text.handler
+    events:
+      - httpApi: { path: '/transcriptions/{id}/transcript', method: GET }
+
+resources:
+  Resources:
+    SessionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.SESSIONS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: sessionId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: sessionId
+            KeyType: HASH
+        SSESpecification:
+          SSEEnabled: true
+        TimeToLiveSpecification:
+          AttributeName: expiresAt
+          Enabled: true
+    TranscriptionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TRANSCRIPTIONS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: userId-createdAt-index
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: INCLUDE
+              NonKeyAttributes:
+                - name
+        SSESpecification:
+          SSEEnabled: true
+    AudioBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        BucketName: ${self:custom.audioBucketName}
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders: ['*']
+              AllowedMethods: [POST]
+              AllowedOrigins:
+                - ${env:WEB_ORIGIN, 'http://localhost:3000'}
+                - ${env:WEB_ORIGIN_LOCAL, 'http://localhost:3000'}
+              MaxAge: 300
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true

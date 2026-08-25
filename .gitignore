@@ -4,10 +4,15 @@ node_modules/
 
 # Generated files
 .nuxt/
+.nitro/
 .output/
+.data/
+.cache/
 .serverless/
 .serverless-offline/
 coverage/
+cypress/screenshots/
+cypress/videos/
 dist/
 
 # Local configuration
@@ -17,4 +22,7 @@ dist/
 
 # OS and logs
 .DS_Store
+.fleet/
+.idea/
+logs/
 *.log

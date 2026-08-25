@@ -3,5 +3,6 @@ packages:
   - contracts
   - web
 allowBuilds:
+  cypress: true
   esbuild: true
   serverless: true
